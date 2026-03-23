@@ -1,0 +1,32 @@
+---
+- name: Manage Docker Compose services
+  hosts: all
+
+  tasks:
+    - name: Validate variables
+      fail:
+        msg: "Variable 'compose_action' must be 'up' or 'down'"
+      when: compose_action not in ['up', 'down']
+
+    - name: Set default compose path
+      set_fact:
+        target_path: "{{ compose_path | default('/zabbix-proxy') }}"
+
+    - name: Check compose directory and file
+      stat:
+        path: "{{ target_path }}/docker-compose.yml"
+      register: compose_check
+
+    - name: Validate docker-compose setup
+      fail:
+        msg: "docker-compose.yml not found in path '{{ target_path }}' or path does not exist"
+      when: not compose_check.stat.exists
+
+    - name: Execute Docker Compose command
+      command:
+        cmd: "docker-compose {{ 'up -d' if compose_action == 'up' else 'down' }}"
+        chdir: "{{ target_path }}"
+
+    - name: Show action summary
+      debug:
+        msg: "Successfully {{ 'started' if compose_action == 'up' else 'stopped' }} Docker Compose services in {{ target_path }}"

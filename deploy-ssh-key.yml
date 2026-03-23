@@ -1,0 +1,17 @@
+---
+- name: Deploy ssh-keys with duplicate check
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Add ssh-keys without duplicates
+      ansible.builtin.lineinfile:
+        path: /root/.ssh/authorized_keys
+        line: "{{ ssh_public_key }}"
+        state: present
+        insertafter: EOF
+        create: yes
+
+    - name: Completion message
+      debug:
+        msg: "SSH key deployment completed on {{ inventory_hostname }}"
