@@ -1,0 +1,63 @@
+---
+- name: Collect configs from servers
+  hosts: all:!localhost
+  gather_facts: yes
+  become: yes
+  
+  tasks:
+    - name: Read config file
+      slurp:
+        src: /etc/zabbix/zabbix_proxy.conf
+      register: config
+      ignore_errors: yes
+
+    - name: Store config content
+      set_fact:
+        config_text: "{{ config.content | b64decode if not config.failed else '# Config not found' }}"
+
+- name: Push to Gitflic
+  hosts: localhost
+  gather_facts: yes
+  
+  tasks:
+    - name: Clone or init repo
+      shell: |
+        export GIT_SSL_NO_VERIFY=1
+        cd /tmp && rm -rf zabbix_repo
+        git clone https://oauth2:{{ gitflic_token }}@svx-gitflic-01.ar.int/project/mon/zabbix-config.git zabbix_repo 2>/dev/null || {
+          mkdir zabbix_repo
+          cd zabbix_repo
+          git init
+          git remote add origin https://oauth2:{{ gitflic_token }}@svx-gitflic-01.ar.int/project/mon/zabbix-config.git
+        }
+        
+        cd /tmp/zabbix_repo
+        mkdir -p zabbix_proxy
+      args:
+        executable: /bin/bash
+
+    - name: Copy configs
+      copy:
+        content: "{{ hostvars[item].config_text }}"
+        dest: "/tmp/zabbix_repo/zabbix_proxy/{{ item }}.conf"
+        force: yes
+      loop: "{{ groups['all'] }}"
+      when: item != 'localhost'
+
+    - name: Push to git
+      shell: |
+        cd /tmp/zabbix_repo
+        git config user.email "awx@koltsovo.ru"
+        git config user.name "AWX"
+        git add .
+        git commit -m "Update configs {{ ansible_date_time.date }}" || echo "No changes"
+        git push -u origin master || git push -u origin main
+      args:
+        executable: /bin/bash
+      environment:
+        GIT_SSL_NO_VERIFY: "1"
+
+    - name: Cleanup
+      file:
+        path: /tmp/zabbix_repo
+        state: absent
